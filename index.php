@@ -6,8 +6,8 @@ require_once 'Pimple.php';
 \Slim\Slim::registerAutoloader();
 
 $app = new Slim\Slim(array(
-	'mode' => 'development',
-	'debug' => true
+	'mode' => 'production',
+	'debug' => false
 ));
 
 // Set Default Timezone to America/Los_Angeles as this is what all App Store dates are in.
@@ -21,9 +21,9 @@ $dbContainer = new Pimple();
 // ************************************************************
 $dbContainer['db.options'] = array(
 	'host' => 'localhost',					// CONFIGURE TO YOUR DB HOSTNAME					
-	'username' => 'mag1_sadev',			// CONFIGURE TO YOUR DB USERNAME		
-	'password' => 'selmer_76',				// CONFIGURE TO YOUR DB USERNAME'S PASSWORD
-	'dbname' => 'mag1_magrocketdev2'		// CONFIGURE TO YOUR DB INSTANCE NAME
+	'username' => 'mag1_install',			// CONFIGURE TO YOUR DB USERNAME		
+	'password' => 'magrocket',				// CONFIGURE TO YOUR DB USERNAME'S PASSWORD
+	'dbname' => 'mag1_magrocketinstall'		// CONFIGURE TO YOUR DB INSTANCE NAME
 );
 //*************************************************************
 
