@@ -84,7 +84,7 @@ $app->get('/', function () {
 			code,kbd{background:#EEE;border:1px solid #DDD;border:1px solid #DDD;border-radius:4px;-moz-border-radius:4px;-webkit-border-radius:4px;padding:0 4px;color:#666;font-size:12px;}
 			pre{background:#EEE;border:1px solid #DDD;border-radius:4px;-moz-border-radius:4px;-webkit-border-radius:4px;padding:5px 10px;color:#666;font-size:12px;}
 			pre code{background:transparent;border:none;padding:0;}
-			a{color:#70a23e;}
+			a{color:#0068ae;}
 			header{padding: 30px 0;text-align:center;}
 			</style>
 			</head>
@@ -153,6 +153,10 @@ $app->get('/issues/:app_id/:user_id', function ($app_id, $user_id)
 	global $dbContainer;
 	$db = $dbContainer['db'];
     
+    // Lookup Issue Download Security condition for Publication, if true, create secured API Issue download links 
+	$result = $db->query("SELECT ISSUE_DOWNLOAD_SECURITY FROM PUBLICATION WHERE APP_ID = '$app_id' LIMIT 0, 1");	
+	$issueDownloadSecurity = $result->fetchColumn();
+	
 	// Query all issues for the incoming APP_ID
 	$sql = "SELECT * FROM ISSUES WHERE APP_ID = '$app_id'";
 	
@@ -165,7 +169,13 @@ $app->get('/issues/:app_id/:user_id', function ($app_id, $user_id)
 			$IssuesArray[$i]['info'] = $row['INFO'];
 			$IssuesArray[$i]['date'] = $row['DATE'];
 			$IssuesArray[$i]['cover'] = $row['COVER'];
-			$IssuesArray[$i]['url'] = $row['URL'];
+			
+			if ($issueDownloadSecurity == "TRUE") {
+				$IssuesArray[$i]['url'] = "http://" . $_SERVER['HTTP_HOST'] . "/issue/" . $app_id . "/" . $user_id . "/" . $row['NAME'];
+			}
+			else{
+				$IssuesArray[$i]['url'] = $row['URL'];
+			}
 			$IssuesArray[$i]['product_id'] = $row['PRODUCT_ID'];
 			$i++;
 		}
@@ -573,7 +583,7 @@ function checkSubscription($app_id, $user_id)
 
 // Validate InApp Purchase Receipt, by calling the Apple iTunes verifyReceipt method
 // *Note that this seems to take between 2-4 seconds on average
-function verifyReceipt($receipt, $app_id, $isSandbox = true)
+function verifyReceipt($receipt, $app_id)
 {
 	global $dbContainer;
 	$db = $dbContainer['db'];
@@ -582,14 +592,18 @@ function verifyReceipt($receipt, $app_id, $isSandbox = true)
 	$result = $db->query("SELECT ITUNES_SHARED_SECRET FROM PUBLICATION WHERE APP_ID = '$app_id' LIMIT 0, 1");	
 	$sharedSecret = $result->fetchColumn();
 
-	if ($isSandbox) {
+	// Lookup development mode condition for Publication if in Development, if development mode is false use the Production endpoint
+	$result = $db->query("SELECT DEVELOPMENT_MODE FROM PUBLICATION WHERE APP_ID = '$app_id' LIMIT 0, 1");	
+	$development_mode = $result->fetchColumn();
+	
+	if ($development_mode == "TRUE") {
 		$endpoint = 'https://sandbox.itunes.apple.com/verifyReceipt';
 	}
 	else {
 		$endpoint = 'https://buy.itunes.apple.com/verifyReceipt';
 	}
 
-	// If no shared secret exists, don't send it to the verifyReceipt call
+	// If no shared secret exists, don't send it to the verifyReceipt call, however it should exist!
 	if($sharedSecret){
 		$postData = json_encode(array(
 		'receipt-data' => $receipt,
