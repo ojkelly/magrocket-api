@@ -101,7 +101,7 @@ class Environment implements \ArrayAccess, \IteratorAggregate
             'REMOTE_ADDR' => '127.0.0.1',
             'slim.url_scheme' => 'http',
             'slim.input' => '',
-            'slim.errors' => @fopen('error', 'w')
+            'slim.errors' => @fopen('php://stderr', 'w')
         ), $userSettings));
 
         return self::$environment;
