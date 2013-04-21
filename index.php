@@ -293,12 +293,13 @@ $app->get('/purchases/:app_id/:user_id', function ($app_id, $user_id)
 					$subscribed = true;
 				}
 			}
-	
-			$result = $db->query("SELECT PRODUCT_ID FROM PURCHASES
-											     WHERE APP_ID = '$app_id' AND USER_ID = '$user_id'");
-			
-			$purchased_product_ids = $result->fetchAll(PDO::FETCH_COLUMN);
 		}
+	
+		$result = $db->query("SELECT PRODUCT_ID FROM PURCHASES
+								WHERE APP_ID = '$app_id' AND USER_ID = '$user_id'");
+			
+		$purchased_product_ids = $result->fetchAll(PDO::FETCH_COLUMN);
+
 		echo json_encode(array(
 			'issues' => $purchased_product_ids,
 			'subscribed' => $subscribed
@@ -381,19 +382,16 @@ $app->post('/confirmpurchase/:app_id/:user_id', function ($app_id, $user_id) use
 			$stmt->bindParam("bvrs", $iTunesReceiptInfo->receipt->bvrs);
 			$stmt->bindParam("base64_receipt", $receiptdata);
 			$stmt->execute();
-			$lastInsertID = $db->lastInsertId();			
-			
-			if ($lastInsertID > 0) {
-				// If successful, record the user's purchase
-				if($type == 'auto-renewable-subscription'){
-					markIssuesAsPurchased($iTunesReceiptInfo,$app_id,$user_id);
-				}else if($type == 'issue'){
-					markIssueAsPurchased($iTunesReceiptInfo->receipt->product_id, $app_id, $user_id);				
-				}else if($purchase_type == 'free-subscription'){
-					// Nothing to do, as the server assumes free subscriptions won't be enabled				
-				}				
-				echo '{"success":{"message":"' . $lastInsertID . '"}}';
-			}
+
+			// If successful, record the user's purchase
+			if($type == 'auto-renewable-subscription'){
+				markIssuesAsPurchased($iTunesReceiptInfo,$app_id,$user_id);
+			}else if($type == 'issue'){
+				markIssueAsPurchased($iTunesReceiptInfo->receipt->product_id, $app_id, $user_id);				
+			}else if($type == 'free-subscription'){
+				// Nothing to do, as the server assumes free subscriptions won't be enabled				
+			}				
+
 		}
 		catch(PDOException $e) {
 			logMessage($e->getMessage());
