@@ -371,7 +371,7 @@ $app->post('/confirmpurchase/:app_id/:user_id', function ($app_id, $user_id) use
 			$stmt->bindParam("product_id", $iTunesReceiptInfo->receipt->product_id);
 			$stmt->bindParam("type", $type);
 			$stmt->bindParam("transaction_id", $iTunesReceiptInfo->receipt->transaction_id);
-			$stmt->bindParam("user_id", $userid);
+			$stmt->bindParam("user_id", $user_id);
 			$stmt->bindParam("purchase_date", $iTunesReceiptInfo->receipt->purchase_date);
 			$stmt->bindParam("original_transaction_id", $iTunesReceiptInfo->receipt->original_transaction_id);
 			$stmt->bindParam("original_purchase_date", $iTunesReceiptInfo->receipt->original_purchase_date);
