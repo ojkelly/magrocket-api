@@ -245,6 +245,7 @@ $app->get('/purchases/:app_id/:user_id', function ($app_id, $user_id)
 {
 	global $dbContainer;
 	$db = $dbContainer['db'];
+	$purchased_product_ids = array();
 	
 	try {
 		$subscribed = false;
@@ -255,47 +256,49 @@ $app->get('/purchases/:app_id/:user_id', function ($app_id, $user_id)
 									     ORDER BY transaction_id DESC LIMIT 0, 1");
 		
 		$base64_latest_receipt = $result->fetchColumn();
-
-		$userSubscription = checkSubscription($app_id, $user_id);
-		$dateLastValidated = new DateTime($userSubscription["LAST_VALIDATED"]);
-		$dateExpiration = new DateTime($userSubscription["EXPIRATION_DATE"]);
-		$dateCurrent = new DateTime('now');
-		$interval = $dateCurrent->diff($dateLastValidated);
-
-		logMessage($interval->format('%h hours %i minutes'));
-
-		// Only refresh and re-verify receipt if greater than 12 hours (max one day) before last check
-		if ($interval->format('%h') > 12 || $interval->format('%a') > 1) {
-			// Check the latest receipt from the subscription table
-
-			if ($base64_latest_receipt) {
-				$data = verifyReceipt($base64_latest_receipt, $app_id);
-
-				markIssuesAsPurchased($data, $app_id, $user_id);
-
-				// Check if there is an active subscription for the user.  Status=0 is true.
-				$subscribed = ($data->status == 0);
+		if($base64_latest_receipt)
+		{
+			$userSubscription = checkSubscription($app_id, $user_id);
+			$dateLastValidated = new DateTime($userSubscription["LAST_VALIDATED"]);
+			$dateExpiration = new DateTime($userSubscription["EXPIRATION_DATE"]);
+			$dateCurrent = new DateTime('now');
+			$interval = $dateCurrent->diff($dateLastValidated);
+	
+			logMessage($interval->format('%h hours %i minutes'));
+			logMessage($user_id);
+	
+			// Only refresh and re-verify receipt if greater than 12 hours (max one day) before last check
+			if ($interval->format('%h') > 12 || $interval->format('%a') > 1) {
+				// Check the latest receipt from the subscription table
+	
+				if ($base64_latest_receipt) {
+					$data = verifyReceipt($base64_latest_receipt, $app_id);
+	
+					markIssuesAsPurchased($data, $app_id, $user_id);
+	
+					// Check if there is an active subscription for the user.  Status=0 is true.
+					$subscribed = ($data->status == 0);
+				}
+				else {
+					// There is no receipt for this user, there is no active subscription
+					$subscribed = false;
+				}
 			}
 			else {
-				// There is no receipt for this user, there is no active subscription
-				$subscribed = false;
+				// We aren't going to re-verify the receipt now, but we should determine if the Expiration Date is beyond now
+				if ($dateCurrent > $dateExpiration) {
+					$subscribed = false;
+				}
+				else {
+					$subscribed = true;
+				}
 			}
+	
+			$result = $db->query("SELECT PRODUCT_ID FROM PURCHASES
+											     WHERE APP_ID = '$app_id' AND USER_ID = '$user_id'");
+			
+			$purchased_product_ids = $result->fetchAll(PDO::FETCH_COLUMN);
 		}
-		else {
-			// We aren't going to re-verify the receipt now, but we should determine if the Expiration Date is beyond now
-			if ($dateCurrent > $dateExpiration) {
-				$subscribed = false;
-			}
-			else {
-				$subscribed = true;
-			}
-		}
-
-		$result = $db->query("SELECT PRODUCT_ID FROM PURCHASES
-										     WHERE APP_ID = '$app_id' AND USER_ID = '$user_id'");
-		
-		$purchased_product_ids = $result->fetchAll(PDO::FETCH_COLUMN);
-
 		echo json_encode(array(
 			'issues' => $purchased_product_ids,
 			'subscribed' => $subscribed
