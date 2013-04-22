@@ -159,7 +159,7 @@ $app->get('/issues/:app_id/:user_id', function ($app_id, $user_id)
 	$issueDownloadSecurity = $result->fetchColumn();
 	
 	// Query all issues for the incoming APP_ID
-	$sql = "SELECT * FROM ISSUES WHERE APP_ID = '$app_id'";
+	$sql = "SELECT * FROM ISSUES WHERE APP_ID = '$app_id' AND AVAILABILITY = 'published'";
 	
 	try {	
 		$IssuesArray = array();
