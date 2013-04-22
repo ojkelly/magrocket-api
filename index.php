@@ -1,6 +1,7 @@
 <?php
 require 'Slim/Slim.php';
 
+// Pimple Dependency Injection Container
 require_once 'Pimple.php';
 
 \Slim\Slim::registerAutoloader();
@@ -20,10 +21,10 @@ $dbContainer = new Pimple();
 // MagRocket API SETUP CONFIGURATION SETTING
 // ************************************************************
 $dbContainer['db.options'] = array(
-	'host' => 'localhost',					// CONFIGURE TO YOUR DB HOSTNAME					
-	'username' => 'mag1_install',			// CONFIGURE TO YOUR DB USERNAME		
-	'password' => 'magrocket',				// CONFIGURE TO YOUR DB USERNAME'S PASSWORD
-	'dbname' => 'mag1_magrocketinstall'		// CONFIGURE TO YOUR DB INSTANCE NAME
+	'host' => 'localhost',											// CONFIGURE TO YOUR DB HOSTNAME					
+	'username' => 'mag1_install',									// CONFIGURE TO YOUR DB USERNAME		
+	'password' => 'magrocket',										// CONFIGURE TO YOUR DB USERNAME'S PASSWORD
+	'dbname' => 'mag1_magrocketinstall'							// CONFIGURE TO YOUR DB INSTANCE NAME
 );
 //*************************************************************
 
@@ -524,6 +525,8 @@ function markIssueAsPurchased($product_id, $app_id, $user_id)
 {
 	global $dbContainer;
 	$db = $dbContainer['db'];
+	
+	logMessage($product_id);
 	
 	$sql = "INSERT IGNORE INTO PURCHASES (APP_ID, USER_ID, PRODUCT_ID) 
 	    			VALUES (:app_id, :user_id, :product_id)";
