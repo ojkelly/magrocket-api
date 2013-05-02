@@ -307,6 +307,22 @@ $app->get('/purchases/:app_id/:user_id', function ($app_id, $user_id)
 				}
 			}
 		}
+		else
+		{
+			// There is no Auto-Renewable-Subscription for the APP_ID, USER_ID combination - check if there is a Free-Subscription
+			$result = $db->query("SELECT BASE64_RECEIPT FROM RECEIPTS
+									     WHERE APP_ID = '$app_id' AND USER_ID = '$user_id' AND TYPE = 'free-subscription'
+									     ORDER BY TRANSACTION_ID DESC LIMIT 0, 1");
+		
+			$base64_latest_receipt = $result->fetchColumn();
+			
+			// If there is a receipt for a free-subscription then we will return that the USER_ID is subscribed.  Since a free
+			// subscription really doesn't have and valid term then we will just ignore any dates in the Apple receipt.
+			// However the list of purchased product_ids can still be blank because the issues should be marked as free.
+			if($base64_latest_receipt){
+				$subscribed = true;
+			}			
+		}
 	
 		// Return list of purchased product_ids for the user
 		$result = $db->query("SELECT PRODUCT_ID FROM PURCHASES
