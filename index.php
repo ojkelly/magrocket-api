@@ -43,6 +43,9 @@ $dbContainer['db'] = $dbContainer->share(function () use($dbContainer)
 
 // GET route
 $app->get('/', function () {
+
+	$SCRIPT_LOCATION = str_replace('index.php','',$_SERVER['SCRIPT_NAME']);
+	
     $template = "
 			<!DOCTYPE html>
 			<html>
@@ -103,7 +106,7 @@ $app->get('/', function () {
 			<section>
 			<h2>Get Started</h2>
 			<ol>
-			<li><a href='/checkinstall' target='_blank'>Check DB Connectivity</a></li>
+			<li><a href='" . $SCRIPT_LOCATION . "checkinstall' target='_blank'>Check DB Connectivity</a></li>
 			<li>Read the <a href='http://www.magrocket.com/knowledgebase/' target='_blank'>online documentation</a></li>
 			<li>Follow <a href='http://www.twitter.com/magrocket' target='_blank'>@magrocket</a> on Twitter</li>
 			</ol>
@@ -156,6 +159,8 @@ $app->get('/issues/:app_id/:user_id', function ($app_id, $user_id)
 {
 	global $dbContainer;
 	$db = $dbContainer['db'];
+	
+	$SCRIPT_LOCATION = str_replace('index.php','',$_SERVER['SCRIPT_NAME']);
     
     // Lookup Issue Download Security condition for Publication, if true, create secured API Issue download links 
 	$result = $db->query("SELECT ISSUE_DOWNLOAD_SECURITY FROM PUBLICATION WHERE APP_ID = '$app_id' LIMIT 0, 1");	
@@ -177,7 +182,8 @@ $app->get('/issues/:app_id/:user_id', function ($app_id, $user_id)
 			$IssuesArray[$i]['cover'] = $row['COVER'];
 			
 			if ($issueDownloadSecurity == "TRUE") {
-				$IssuesArray[$i]['url'] = "http://" . $_SERVER['HTTP_HOST'] . "/issue/" . $app_id . "/" . $user_id . "/" . $row['NAME'];
+				
+				$IssuesArray[$i]['url'] = "http://" . $_SERVER['HTTP_HOST'] . $SCRIPT_LOCATION . "issue/" . $app_id . "/" . $user_id . "/" . $row['NAME'];
 			}
 			else{
 				$IssuesArray[$i]['url'] = $row['URL'];
