@@ -11,6 +11,9 @@ $app = new Slim\Slim(array(
 	'debug' => false
 ));
 
+// Set Content Type and Encoding.
+$app->contentType('text/html; charset=utf-8');
+
 // Set Default Timezone to America/Los_Angeles as this is what all App Store dates are in.
 date_default_timezone_set('America/Los_Angeles');
 
@@ -34,7 +37,14 @@ $dbContainer['db.options'] = array(
 // Using "share" method makes sure that the function is only called when 'db' is retrieved the first time.
 $dbContainer['db'] = $dbContainer->share(function () use($dbContainer)
 {
-	return new PDO('mysql:host=' . $dbContainer['db.options']['host'] . ';dbname=' . $dbContainer['db.options']['dbname'], $dbContainer['db.options']['username'], $dbContainer['db.options']['password']);
+	// Get DB handle and create new PDO DB object using configuration settings
+	$dbHandle = new PDO('mysql:host=' . $dbContainer['db.options']['host'] . ';dbname=' . $dbContainer['db.options']['dbname'], $dbContainer['db.options']['username'], $dbContainer['db.options']['password']);
+	
+	// Set Character Set for DB connection to UTF-8
+	$dbHandle -> exec("SET CHARACTER SET utf8");
+	
+	// Return DB handle
+	return $dbHandle;
 });
 
 // ************************************************
