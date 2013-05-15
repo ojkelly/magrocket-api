@@ -295,9 +295,12 @@ $app->get('/purchases/:app_id/:user_id', function ($app_id, $user_id)
 			$interval = $dateCurrent->diff($dateLastValidated);
 	
 			if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Time since last validating receipt for APP ID: " . $app_id . " USER ID: " . $user_id . " = "  . $interval->format('%h hours %i minutes') );}
-	
+			
+			// If you want this Verification to happen ever time when in Development Mode, you can swap out the commented line below for the one below
+			// if (($interval->format('%h') > 12 || $interval->format('%a') > 1) || (isInDevelopmentMode($app_id)=="TRUE")) {			
+			
 			// Only refresh and re-verify receipt if greater than 12 hours (max one day) before last check
-			if ($interval->format('%h') > 12 || $interval->format('%a') > 1) {
+			if (($interval->format('%h') > 12) || ($interval->format('%a') > 1)){
 				// Check the latest receipt from the subscription table
 	
 				if ($base64_latest_receipt) {		
@@ -542,6 +545,11 @@ function markIssuesAsPurchased($app_store_data, $app_id, $user_id)
 	// Now update the Purchases table with all Issues that fall within the subscription start and expiration date
 	$startDateFormatted = $startDate->format('Y-m-d H:i:s');
 	$endDateFormatted = $endDate->format('Y-m-d H:i:s');
+	
+	// Get First Day of the Month that the Receipt was generated for (Start)
+	$issuesStartDateFormatted = $startDate->format('Y-m-01 00:00:00');
+	// Get Last Day of the Month that the Receipt was generated for (Expiration)
+	$issuesEndDateFormatted = $endDate->format('Y-m-t 23:59:59');
 
 	// Update Subscriptions Table for user with current active subscription start and expiration date
 	updateSubscription($app_id, $user_id, $startDateFormatted, $endDateFormatted);
@@ -555,19 +563,22 @@ function markIssuesAsPurchased($app_store_data, $app_id, $user_id)
 		// For Testing, marking only with Subscription start date, not expiration date	
 		//$result = $db->query("SELECT PRODUCT_ID FROM ISSUES
 	    //   							WHERE APP_ID = '$app_id'
-	    //   							AND `DATE` > '$startDateFormatted'");
+	    //		  						AND `DATE` >= '$issuesStartDateFormatted'
+	    //		  						AND PRICING = 'paid'");
 		
 		// For Testing Purposes in development mark all as available
 		$result = $db->query("SELECT PRODUCT_ID FROM ISSUES
-		  							 WHERE APP_ID = '$app_id' AND PRICING = 'paid'");
+		  							 WHERE APP_ID = '$app_id'
+		  							 AND PRICING = 'paid'");
 	}
 	else{
 		// For Production
 		$result = $db->query("SELECT PRODUCT_ID FROM ISSUES
 									WHERE APP_ID = '$app_id'
-									AND `DATE` >= '$startDateFormatted'
-									AND `DATE` <= '$endDateFormatted'
-									AND PRICING = 'paid'");
+									AND `DATE` >= '$issuesStartDateFormatted'
+									AND `DATE` <= '$issuesEndDateFormatted'
+									AND PRICING = 'paid'
+									AND AVAILABILITY = 'published'");
 	}
 
 	$product_ids_to_mark = $result->fetchAll(PDO::FETCH_COLUMN);
