@@ -381,19 +381,29 @@ $app->get('/itunes/:app_id', function ($app_id)
 {
 	global $dbContainer;
 	$db = $dbContainer['db'];
-	
-	$sql = "SELECT * FROM ISSUES WHERE APP_ID = " . "'" . $app_id . "'";
 
 	try {
-		$iTunesUpdateDate = "2011-08-01T00:00:00-07:00";
+		$result = $db->query("SELECT ITUNES_UPDATED FROM PUBLICATION WHERE APP_ID = '$app_id' LIMIT 0, 1");	
+		
+		$ITUNES_UPDATED = $result->fetchColumn();
+
+		if(!$ITUNES_UPDATED)
+			throw new Exception('Invalid APP ID');
+			
+		$iTunesUpdateDate = new DateTime($ITUNES_UPDATED);
+				
+		$sql = "SELECT * FROM ISSUES WHERE APP_ID = '$app_id' AND AVAILABILITY = 'published'";
+
 		$AtomXML = "<?xml version=\"1.0\" encoding=\"UTF-8\"" . "?>";
 		$AtomXML.= "<feed xmlns=\"http://www.w3.org/2005/Atom\" xmlns:news=\"http://itunes.apple.com/2011/Newsstand\">";
-		$AtomXML.= "<updated>" . $iTunesUpdateDate . "</updated>";
+		$AtomXML.= "<updated>" . date_format($iTunesUpdateDate, DateTime::ATOM) . "</updated>";
 		foreach($db->query($sql) as $row) {
+			$iTunesIssueUpdateDate = new DateTime($row['ITUNES_UPDATED']);
+			$iTunesPublishedDate = new DateTime($row['DATE']);
 			$AtomXML.= "<entry>";
 			$AtomXML.= "<id>" . $row['NAME'] . "</id>";
-			$AtomXML.= "<updated>" . $row['ITUNES_UPDATED'] . "</updated>";
-			$AtomXML.= "<published>" . $row['ITUNES_PUBLISHED'] . "</published>";
+			$AtomXML.= "<updated>" . date_format($iTunesIssueUpdateDate, DateTime::ATOM) . "</updated>";
+			$AtomXML.= "<published>" . date_format($iTunesPublishedDate, DateTime::ATOM) . "</published>";
 			$AtomXML.= "<summary>" . $row['ITUNES_SUMMARY'] . "</summary>";
 			$AtomXML.= "<news:cover_art_icons>";
 			$AtomXML.= "<news:cover_art_icon size=\"SOURCE\" src=\"" . $row['ITUNES_COVERART_URL'] . "\"/>";
@@ -403,7 +413,7 @@ $app->get('/itunes/:app_id', function ($app_id)
 		$AtomXML.= "</feed>";
 		echo utf8_encode($AtomXML);
 	}
-	catch(PDOException $e) {
+	catch(Exception $e) {
 		logMessage(LogType::Error, $e->getMessage());
 		echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 	}
