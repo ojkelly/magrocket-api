@@ -2,7 +2,7 @@ GNU AFFERO GENERAL PUBLIC LICENSE
 
 Version 3, 19 November 2007
 
-Copyright © 2013 NIN9 Creative, LLC
+Copyright © 2013 NIN9 Creative, LLC (Andrew Krowczyk)
 
 Preamble
 
