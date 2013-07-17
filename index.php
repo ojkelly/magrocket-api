@@ -647,25 +647,15 @@ function markIssuesAsPurchased($app_store_data, $app_id, $user_id)
 	// Update Subscriptions Table for user with current active subscription start and expiration date
 	updateSubscription($app_id, $user_id, $startDateFormatted, $endDateFormatted);
 
-	// Lookup development mode condition for Publication if in Development mark all issues as purchased, if production
-	// mark only those that exist within subscription period
-	//$result = $db->query("SELECT DEVELOPMENT_MODE FROM PUBLICATION WHERE APP_ID = '$app_id' LIMIT 0, 1");	
-	//$development_mode = $result->fetchColumn();
-	
-	if(isInDevelopmentMode($app_id)=="TRUE"){
-		// For Testing, marking only with Subscription start date, not expiration date	
-		//$result = $db->query("SELECT PRODUCT_ID FROM ISSUES
-	    //   							WHERE APP_ID = '$app_id'
-	    //		  						AND `DATE` >= '$issuesStartDateFormatted'
-	    //		  						AND PRICING = 'paid'");
-		
-		// For Testing Purposes in development mark all as available
+	// If we are in Sandbox Mode, unlock all issues by default for testing purposes	
+	if(getiTunesProductionLevel($app_id)=="sandbox"){
+
 		$result = $db->query("SELECT PRODUCT_ID FROM ISSUES
 		  							 WHERE APP_ID = '$app_id'
 		  							 AND PRICING = 'paid'");
 	}
 	else{
-		// For Production - determine based on Subscription Behavior setting
+		// If we are in Production - determine based on Subscription Behavior setting
 		
 		if(getSubscriptionBehavior($app_id)=="all"){
 		
