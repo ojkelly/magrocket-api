@@ -29,6 +29,9 @@ $iTunesProductionLevel = '';
 // Global iTunes Receipt Validation Caching Setting
 $iTunesCachingDuration = 0;
 
+// Global iTunes Receipt Validation Caching Setting
+$subscriptionBehavior = '';
+
 // DB Setup for Pimple Container
 // MagRocket API SETUP CONFIGURATION SETTING
 // ************************************************************
@@ -581,6 +584,22 @@ function getiTunesProductionLevel($app_id)
 	}
 }
 
+// Retrieve the Subscription Behavior setting for marking issues as purchased
+function getSubscriptionBehavior($app_id)
+{
+	global $subscriptionBehavior;
+	global $dbContainer;
+	$db = $dbContainer['db'];
+			
+	if($subscriptionBehavior != ""){
+		return $subscriptionBehavior;
+	}
+	else{
+		$result = $db->query("SELECT SUBSCRIPTION_BEHAVIOR FROM PUBLICATION WHERE APP_ID = '$app_id' LIMIT 0, 1");	
+		return $result->fetchColumn();
+	}
+}
+
 // Retrieve the iTunes Caching Duration for re-validating Apple Receipts
 function getiTunesCachingDuration($app_id)
 {
@@ -596,12 +615,6 @@ function getiTunesCachingDuration($app_id)
 		return $result->fetchColumn();
 	}
 }
-
-// Global iTunes Production Level Setting
-$iTunesProductionLevel = '';
-
-// Global iTunes Receipt Validation Caching Setting
-$iTunesCachingDuration = 0;
 
 // Mark all available (paid) issues as purchased for a given user
 function markIssuesAsPurchased($app_store_data, $app_id, $user_id)
@@ -652,13 +665,32 @@ function markIssuesAsPurchased($app_store_data, $app_id, $user_id)
 		  							 AND PRICING = 'paid'");
 	}
 	else{
-		// For Production
-		$result = $db->query("SELECT PRODUCT_ID FROM ISSUES
-									WHERE APP_ID = '$app_id'
-									AND `DATE` >= '$issuesStartDateFormatted'
-									AND `DATE` <= '$issuesEndDateFormatted'
-									AND PRICING = 'paid'
-									AND AVAILABILITY = 'published'");
+		// For Production - determine based on Subscription Behavior setting
+		
+		if(getSubscriptionBehavior($app_id)=="all"){
+		
+			$result = $db->query("SELECT PRODUCT_ID FROM ISSUES
+		  							 WHERE APP_ID = '$app_id'
+		  							 AND PRICING = 'paid'");
+	  							 
+		}else if(getSubscriptionBehavior($app_id)=="term"){
+		
+			$result = $db->query("SELECT PRODUCT_ID FROM ISSUES
+								WHERE APP_ID = '$app_id'
+								AND `DATE` >= '$issuesStartDateFormatted'
+								AND `DATE` <= '$issuesEndDateFormatted'
+								AND PRICING = 'paid'
+								AND AVAILABILITY = 'published'");			
+		}else{
+		
+			//Default to 'term' if for some reason the above fails
+			$result = $db->query("SELECT PRODUCT_ID FROM ISSUES
+								WHERE APP_ID = '$app_id'
+								AND `DATE` >= '$issuesStartDateFormatted'
+								AND `DATE` <= '$issuesEndDateFormatted'
+								AND PRICING = 'paid'
+								AND AVAILABILITY = 'published'");	
+		}
 	}
 
 	$product_ids_to_mark = $result->fetchAll(PDO::FETCH_COLUMN);
