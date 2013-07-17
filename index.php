@@ -27,7 +27,7 @@ $developmentMode = '';
 $iTunesProductionLevel = '';
 
 // Global iTunes Receipt Validation Caching Setting
-$iTunesCachingDuration = -1;
+$iTunesCachingDuration = 0;
 
 // DB Setup for Pimple Container
 // MagRocket API SETUP CONFIGURATION SETTING
@@ -314,12 +314,21 @@ $app->get('/purchases/:app_id/:user_id', function ($app_id, $user_id)
 			if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Time since last validating receipt for APP ID: " . $app_id . " USER ID: " . $user_id . " = "  . $interval->format('%h hours %i minutes') );}
 			
 			// Only refresh and re-verify receipt if greater than the iTunesCachingDuration - or greater than 1 whole day
-			if ((getiTunesCachingDuration($app_id) == 0) || ($interval->format('%h') > getiTunesCachingDuration($app_id)) || ($interval->format('%a') > 1)) {
+			if ((getiTunesCachingDuration($app_id) == -1) || ($interval->format('%h') > getiTunesCachingDuration($app_id)) || ($interval->format('%a') > 1)) {
 				// Check the latest receipt from the subscription table
 	
 				if ($base64_latest_receipt) {		
-					$data = verifyReceipt($base64_latest_receipt, $app_id, $user_id);
-	
+					// Verify Receipt - with logic to fall back to Sandbox test if Production Receipt fails (error code 21007)
+                try{
+                        $data = verifyReceipt($base64_latest_receipt, $app_id, $user_id);
+                }
+                catch(Exception $e) {
+                        if($e->getCode() == "21007"){
+                                logMessage(LogType::Info,"Confirming purchase for APP ID - Sandbox Receipt used in Production, retrying against Sandbox iTunes API: " . $app_id . " USER ID: " . $user_id . " TYPE: " . $type);
+                                $data = verifyReceipt($base64_latest_receipt, $app_id, $user_id, TRUE);
+                    }
+                }    
+
 					markIssuesAsPurchased($data, $app_id, $user_id);
 	
 					// Check if there is an active subscription for the user.  Status=0 is true.
@@ -434,7 +443,16 @@ $app->post('/confirmpurchase/:app_id/:user_id', function ($app_id, $user_id) use
 	if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Confirming purchase for APP ID: " . $app_id . " USER ID: " . $user_id . " TYPE: " . $type);}
 	
 	try {
-		$iTunesReceiptInfo = verifyReceipt($receiptdata, $app_id, $user_id);
+		 // Verify Receipt - with logic to fall back to Sandbox test if Production Receipt fails (error code 21007)
+       try{
+               $iTunesReceiptInfo = verifyReceipt($receiptdata, $app_id, $user_id);
+       }
+       catch(Exception $e) {
+               if($e->getCode() == "21007"){
+                       logMessage(LogType::Info,"Confirming purchase for APP ID - Sandbox Receipt used in Production, retrying against Sandbox iTunes API: " . $app_id . " USER ID: " . $user_id . " TYPE: " . $type);
+                       $iTunesReceiptInfo = verifyReceipt($receiptdata, $app_id, $user_id, TRUE);
+           }
+       }   
 		
 		$sql = "INSERT IGNORE INTO RECEIPTS (APP_ID, QUANTITY, PRODUCT_ID, TYPE, TRANSACTION_ID, USER_ID, PURCHASE_DATE, 
 	 		    			ORIGINAL_TRANSACTION_ID, ORIGINAL_PURCHASE_DATE, APP_ITEM_ID, VERSION_EXTERNAL_IDENTIFIER, BID, BVRS, BASE64_RECEIPT) 
@@ -727,7 +745,7 @@ function checkSubscription($app_id, $user_id)
 
 // Validate InApp Purchase Receipt, by calling the Apple iTunes verifyReceipt method
 // *Note that this seems to take between 2-4 seconds on average
-function verifyReceipt($receipt, $app_id, $user_id)
+function verifyReceipt($receipt, $app_id, $user_id, $sandbox_override = FALSE)
 {
 	global $dbContainer;
 	$db = $dbContainer['db'];
@@ -738,7 +756,7 @@ function verifyReceipt($receipt, $app_id, $user_id)
 	$result = $db->query("SELECT ITUNES_SHARED_SECRET FROM PUBLICATION WHERE APP_ID = '$app_id' LIMIT 0, 1");	
 	$sharedSecret = $result->fetchColumn();
 	
-	if (getiTunesProductionLevel($app_id)=="sandbox") {
+	if (getiTunesProductionLevel($app_id)=="sandbox" || $sandbox_override == TRUE) {
 		$endpoint = 'https://sandbox.itunes.apple.com/verifyReceipt';
 	}
 	else {
@@ -778,8 +796,8 @@ function verifyReceipt($receipt, $app_id, $user_id)
 
 	if (!isset($data->status) || ($data->status != 0 && $data->status != 21006)) {
 		$product_id = $data->receipt->product_id;
-		logMessage(LogType::Warning, "Invalid receipt for APP ID: " . $app_id . " USER ID: " . $user_id . " PRODUCT ID: " . $product_id . " STATUS: " . $data->status);
-		throw new Exception('Invalid Receipt');
+		logMessage(LogType::Warning, "Invalid receipt for APP ID: " . $app_id . " USER ID: " . $user_id . " STATUS: " . $data->status);
+		throw new Exception('Invalid Receipt', $data->status);
 	}
 
 	return $data;
