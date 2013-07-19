@@ -175,6 +175,8 @@ $app->get('/checkinstall/', function ()
 	
 		$result->execute();
 		$checkInstall = $result->fetchAll();
+
+		logAnalyticMetric(AnalyticType::ApiInteraction,1,NULL,$app_id,$user_id);
 		
 		echo '{"MagRocket API":{"Success":"Database Connection Test Successful"}}';
 	}
@@ -224,6 +226,9 @@ $app->get('/issues/:app_id/:user_id', function ($app_id, $user_id)
 			}
 			$i++;
 		}
+	
+		logAnalyticMetric(AnalyticType::ApiInteraction,1,NULL,$app_id,$user_id);
+	
 		echo json_encode($IssuesArray);
 	}
 	catch(PDOException $e) {
@@ -272,6 +277,9 @@ $app->get('/issue/:app_id/:user_id/:name', function ($app_id, $user_id, $name) u
 			if ($allow_download) {
 				
 				if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Downloading ISSUE: " . $name . " for APP ID: " . $app_id . " USER ID: " . $user_id);}
+				
+				logAnalyticMetric(AnalyticType::ApiInteraction,1,NULL,$app_id,$user_id);
+				logAnalyticMetric(AnalyticType::Download,1,$name,$app_id,$user_id);
 				
 				// Redirect to the downloadable file, nothing else needed in API call
 				$app->response()->redirect($issue['URL'], 303);
@@ -375,6 +383,8 @@ $app->get('/purchases/:app_id/:user_id', function ($app_id, $user_id)
 			
 		$purchased_product_ids = $result->fetchAll(PDO::FETCH_COLUMN);
 		
+		logAnalyticMetric(AnalyticType::ApiInteraction,1,NULL,$app_id,$user_id);
+		
 		echo json_encode(array(
 			'issues' => $purchased_product_ids,
 			'subscribed' => $subscribed
@@ -423,6 +433,9 @@ $app->get('/itunes/:app_id', function ($app_id)
 			$AtomXML.= "</entry>";
 		}
 		$AtomXML.= "</feed>";
+		
+		logAnalyticMetric(AnalyticType::ApiInteraction,1,NULL,$app_id,$user_id);
+		
 		echo utf8_encode($AtomXML);
 	}
 	catch(Exception $e) {
@@ -485,8 +498,10 @@ $app->post('/confirmpurchase/:app_id/:user_id', function ($app_id, $user_id) use
 			}else if($type == 'issue'){
 				markIssueAsPurchased($iTunesReceiptInfo->receipt->product_id, $app_id, $user_id);				
 			}else if($type == 'free-subscription'){
-				// Nothing to do, as the server assumes free subscriptions won't be enabled				
+				// Nothing to do, as the server assumes free subscriptions don't need to be handled in this way			
 			}				
+
+			logAnalyticMetric(AnalyticType::ApiInteraction,1,NULL,$app_id,$user_id);
 
 		}
 		catch(PDOException $e) {
@@ -520,6 +535,9 @@ $app->post('/apns/:app_id/:user_id', function ($app_id, $user_id) use($app)
 		$stmt->bindParam("user_id", $user_id);
 		$stmt->bindParam("apns_token", $apns_token);
 		$stmt->execute();
+		
+		logAnalyticMetric(AnalyticType::ApiInteraction,1,NULL,$app_id,$user_id);
+		
 		echo '{"success":{"message":"' . $apns_token . '"}}';
 	}
 	catch(PDOException $e) {
@@ -548,7 +566,30 @@ function logMessage($logType, $logMessage)
 		$stmt->execute();
 	}
 	catch(PDOException $e) {
-		// Error occurred, just ignore because if it failed in this logMessage method not much we can do
+		// Error occurred, just ignore because if it failed in this logMessage method not much we can do, ignore
+	}
+}
+
+// Log Analytic Metrics for tracking purposes and basic display in the dashboard
+function logAnalyticMetric($analytic_type, $analytic_value, $metadata, $app_id, $user_id)
+{
+	global $dbContainer;
+	$db = $dbContainer['db'];
+	
+	$sql = "INSERT INTO ANALYTICS (APP_ID, USER_ID, TYPE, VALUE, METADATA) 
+		    			VALUES (:app_id, :user_id, :analytic_type, :analytic_value, :metadata)";
+		    			
+	try {
+		$stmt = $db->prepare($sql);
+		$stmt->bindParam("app_id", $app_id);	
+		$stmt->bindParam("user_id", $user_id);
+		$stmt->bindParam("analytic_type", $analytic_type);
+		$stmt->bindParam("analytic_value", $analytic_value);
+		$stmt->bindParam("metadata", $metadata);						
+		$stmt->execute();
+	}
+	catch(PDOException $e) {
+		// Error occurred, just ignore because if it failed in this logAnalyticMetric method not much we can do, ignore
 	}
 }
 
@@ -691,7 +732,7 @@ function markIssuesAsPurchased($app_store_data, $app_id, $user_id)
 	$stmt = $db->prepare($insert);
 	
 	foreach($product_ids_to_mark as $key => $product_id) {
-		$stmt->bindParam(':product_id', $product_id);
+		$stmt->bindParam('product_id', $product_id);
 		$stmt->execute();
 	}
 }
@@ -839,6 +880,13 @@ abstract class LogType
 	const Info = 'Info';
 	const Warning = 'Warning';
 	const Error = 'Error';	
+}
+
+// PHP doesn't support Enums so make a simple class for AnalyticType
+abstract class AnalyticType
+{
+	const Download = 'download';
+	const ApiInteraction = 'api_interaction';	
 }
 
 // Timer class for debugging and logging use
