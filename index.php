@@ -36,10 +36,10 @@ $subscriptionBehavior = '';
 // MagRocket API SETUP CONFIGURATION SETTING
 // ************************************************************
 $dbContainer['db.options'] = array(
-	'host' => 'localhost',							// CONFIGURE TO YOUR DB HOSTNAME					
-	'username' => 'mag1_install',					// CONFIGURE TO YOUR DB USERNAME		
-	'password' => 'magrocket',						// CONFIGURE TO YOUR DB USERNAME'S PASSWORD
-	'dbname' => 'mag1_magrocketinstall'				// CONFIGURE TO YOUR DB INSTANCE NAME
+	'host' => 'localhost',						// CONFIGURE TO YOUR DB HOSTNAME					
+	'username' => 'USERNAME',					// CONFIGURE TO YOUR DB USERNAME		
+	'password' => 'PASSWORD',					// CONFIGURE TO YOUR DB USERNAME'S PASSWORD
+	'dbname' => 'DBNAME'						// CONFIGURE TO YOUR DB INSTANCE NAME
 );
 //*************************************************************
 
@@ -276,10 +276,10 @@ $app->get('/issue/:app_id/:user_id/:name', function ($app_id, $user_id, $name) u
 		
 			if ($allow_download) {
 				
-				if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Downloading ISSUE: " . $name . " for APP ID: " . $app_id . " USER ID: " . $user_id);}
+				if((isInDevelopmentMode($app_id)=="TRUE") && !($app->request()->isHead())){logMessage(LogType::Info,"Downloading ISSUE: " . $name . " for APP ID: " . $app_id . " USER ID: " . $user_id);}
 				
 				logAnalyticMetric(AnalyticType::ApiInteraction,1,NULL,$app_id,$user_id);
-				logAnalyticMetric(AnalyticType::Download,1,$name,$app_id,$user_id);
+				if(!($app->request()->isHead())){logAnalyticMetric(AnalyticType::Download,1,$name,$app_id,$user_id);}
 				
 				// Redirect to the downloadable file, nothing else needed in API call
 				$app->response()->redirect($issue['URL'], 303);
