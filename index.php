@@ -27,10 +27,13 @@ $developmentMode = '';
 $iTunesProductionLevel = '';
 
 // Global iTunes Receipt Validation Caching Setting
-$iTunesCachingDuration = 0;
+$iTunesCachingDuration = -1;
 
 // Global iTunes Receipt Validation Caching Setting
 $subscriptionBehavior = '';
+
+// API Version
+$apiVersion = '1.1';
 
 // DB Setup for Pimple Container
 // MagRocket API SETUP CONFIGURATION SETTING
@@ -137,7 +140,7 @@ $app->get('/', function () {
 			<h2>Get Started</h2>
 			<ol>
 			<li><a href='" . $SCRIPT_LOCATION . "checkinstall' target='_blank'>Check DB Connectivity</a></li>
-			<li>Read the <a href='http://www.magrocket.com/knowledgebase/' target='_blank'>online documentation</a></li>
+			<li>Read the <a href='http://support.magrocket.com/' target='_blank'>online documentation</a></li>
 			<li>Follow <a href='http://www.twitter.com/magrocket' target='_blank'>@magrocket</a> on Twitter</li>
 			</ol>
 			</section>
@@ -146,7 +149,7 @@ $app->get('/', function () {
 			
 			<h3>Support Forum and Knowledge Base</h3>
 			<p>
-			Visit the <a href='http://www.magrocket.com/knowledgebase/' target='_blank'>MagRocket Support Forum and Knowledge Base</a>
+			Visit the <a href='http://support.magrocket.com/' target='_blank'>MagRocket Support Forum and Knowledge Base</a>
 			to read announcements, chat with fellow MagRocket users, ask questions, help others, or show off your cool
 			Baker Newsstand apps.  You might also check out the <a href='http://github.com/nin9creative/magrocket-backend' target='_blank'>Github Project</a> as there will probably be lots of discussion happening
 			over there.
@@ -182,6 +185,24 @@ $app->get('/checkinstall/', function ()
 	}
 	catch(PDOException $e) {
 		echo '{"MagRocket API":{"Error":"' . $e->getMessage() . '"}}';
+	}
+});
+
+// Output Debug Information
+// *Outputs the settings for a given publication that the API is registering, useful when debugging
+$app->get('/debuginformation/:app_id', function ($app_id)
+{  
+	global $apiVersion;
+	
+	try {	
+		echo 'MagRocket API: Debug Information';
+		echo '<BR>API Version: ' . $apiVersion;
+		echo '<BR>Development Mode: ' . isInDevelopmentMode($app_id);
+		echo '<BR>Subscription Behavior: ' . getSubscriptionBehavior($app_id);
+		echo '<BR>iTunes Production Level: ' . getiTunesProductionLevel($app_id);
+		echo '<BR>iTunes Caching Duration: ' . getiTunesCachingDuration($app_id);
+	}
+	catch(PDOException $e) {
 	}
 });
 
