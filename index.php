@@ -11,27 +11,40 @@ $app = new Slim\Slim(array(
 	'debug' => false
 ));
 
+// Set Content Type and Encoding.
+$app->contentType('text/html; charset=utf-8');
+
 // Set Default Timezone to America/Los_Angeles as this is what all App Store dates are in.
 date_default_timezone_set('America/Los_Angeles');
 
 // Create Pimple Dependency Injection Container for DB Connection.
 $dbContainer = new Pimple();
 
+// Global Development Mode Setting
+$developmentMode = '';
+
 // DB Setup for Pimple Container
 // MagRocket API SETUP CONFIGURATION SETTING
 // ************************************************************
 $dbContainer['db.options'] = array(
-	'host' => 'localhost',											// CONFIGURE TO YOUR DB HOSTNAME					
-	'username' => 'mag1_install',									// CONFIGURE TO YOUR DB USERNAME		
-	'password' => 'magrocket',										// CONFIGURE TO YOUR DB USERNAME'S PASSWORD
-	'dbname' => 'mag1_magrocketinstall'							// CONFIGURE TO YOUR DB INSTANCE NAME
+	'host' => 'localhost',							// CONFIGURE TO YOUR DB HOSTNAME					
+	'username' => 'mag1_sadev',					// CONFIGURE TO YOUR DB USERNAME		
+	'password' => 'magrocket',						// CONFIGURE TO YOUR DB USERNAME'S PASSWORD
+	'dbname' => 'mag1_magrocketdev'				// CONFIGURE TO YOUR DB INSTANCE NAME
 );
 //*************************************************************
 
 // Using "share" method makes sure that the function is only called when 'db' is retrieved the first time.
 $dbContainer['db'] = $dbContainer->share(function () use($dbContainer)
 {
-	return new PDO('mysql:host=' . $dbContainer['db.options']['host'] . ';dbname=' . $dbContainer['db.options']['dbname'], $dbContainer['db.options']['username'], $dbContainer['db.options']['password']);
+	// Get DB handle and create new PDO DB object using configuration settings
+	$dbHandle = new PDO('mysql:host=' . $dbContainer['db.options']['host'] . ';dbname=' . $dbContainer['db.options']['dbname'], $dbContainer['db.options']['username'], $dbContainer['db.options']['password']);
+	
+	// Set Character Set for DB connection to UTF-8
+	$dbHandle -> exec("SET CHARACTER SET utf8");
+	
+	// Return DB handle
+	return $dbHandle;
 });
 
 // ************************************************
@@ -40,6 +53,9 @@ $dbContainer['db'] = $dbContainer->share(function () use($dbContainer)
 
 // GET route
 $app->get('/', function () {
+
+	$SCRIPT_LOCATION = str_replace('index.php','',$_SERVER['SCRIPT_NAME']);
+	
     $template = "
 			<!DOCTYPE html>
 			<html>
@@ -100,7 +116,7 @@ $app->get('/', function () {
 			<section>
 			<h2>Get Started</h2>
 			<ol>
-			<li><a href='/checkinstall' target='_blank'>Check DB Connectivity</a></li>
+			<li><a href='" . $SCRIPT_LOCATION . "checkinstall' target='_blank'>Check DB Connectivity</a></li>
 			<li>Read the <a href='http://www.magrocket.com/knowledgebase/' target='_blank'>online documentation</a></li>
 			<li>Follow <a href='http://www.twitter.com/magrocket' target='_blank'>@magrocket</a> on Twitter</li>
 			</ol>
@@ -142,7 +158,7 @@ $app->get('/checkinstall/', function ()
 		
 		echo '{"MagRocket API":{"Success":"Database Connection Test Successful"}}';
 	}
-	catch(PDOException $e) {
+	catch(Exception $e) {
 		echo '{"MagRocket API":{"Error":"' . $e->getMessage() . '"}}';
 	}
 });
@@ -153,10 +169,14 @@ $app->get('/issues/:app_id/:user_id', function ($app_id, $user_id)
 {
 	global $dbContainer;
 	$db = $dbContainer['db'];
+	
+	$SCRIPT_LOCATION = str_replace('index.php','',$_SERVER['SCRIPT_NAME']);
     
     // Lookup Issue Download Security condition for Publication, if true, create secured API Issue download links 
 	$result = $db->query("SELECT ISSUE_DOWNLOAD_SECURITY FROM PUBLICATION WHERE APP_ID = '$app_id' LIMIT 0, 1");	
 	$issueDownloadSecurity = $result->fetchColumn();
+	
+	if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Retrieving Issues for APP ID: " . $app_id . " USER ID: " . $user_id);}
 	
 	// Query all issues for the incoming APP_ID
 	$sql = "SELECT * FROM ISSUES WHERE APP_ID = '$app_id' AND AVAILABILITY = 'published'";
@@ -172,18 +192,22 @@ $app->get('/issues/:app_id/:user_id', function ($app_id, $user_id)
 			$IssuesArray[$i]['cover'] = $row['COVER'];
 			
 			if ($issueDownloadSecurity == "TRUE") {
-				$IssuesArray[$i]['url'] = "http://" . $_SERVER['HTTP_HOST'] . "/issue/" . $app_id . "/" . $user_id . "/" . $row['NAME'];
+				
+				$IssuesArray[$i]['url'] = "http://" . $_SERVER['HTTP_HOST'] . $SCRIPT_LOCATION . "issue/" . $app_id . "/" . $user_id . "/" . $row['NAME'];
 			}
 			else{
 				$IssuesArray[$i]['url'] = $row['URL'];
 			}
-			$IssuesArray[$i]['product_id'] = $row['PRODUCT_ID'];
+			if($row['PRICING'] != 'free')
+			{
+				$IssuesArray[$i]['product_id'] = $row['PRODUCT_ID'];
+			}
 			$i++;
 		}
 		echo json_encode($IssuesArray);
 	}
-	catch(PDOException $e) {
-		logMessage($e->getMessage());
+	catch(Exception $e) {
+		logMessage(LogType::Error, $e->getMessage());
 		echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 	}
 });
@@ -220,12 +244,15 @@ $app->get('/issue/:app_id/:user_id/:name', function ($app_id, $user_id, $name) u
 													WHERE APP_ID = '$app_id' AND USER_ID = '$user_id' AND PRODUCT_ID = '$product_id'");		
 														
 				$allow_download = ($result->fetchColumn() > 0);
-			} else if ($issue) {
-				// No product ID -> the issue is free to download
+			} else if ($issue['PRICING'] == 'free') {
+				// Issue is marked as free, allow download
 				$allow_download = true;
 			}
 		
 			if ($allow_download) {
+				
+				if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Downloading ISSUE: " . $name . " for APP ID: " . $app_id . " USER ID: " . $user_id);}
+				
 				// Redirect to the downloadable file, nothing else needed in API call
 				$app->response()->redirect($issue['URL'], 303);
 			}
@@ -234,9 +261,9 @@ $app->get('/issue/:app_id/:user_id/:name', function ($app_id, $user_id, $name) u
 				die();
 			}
 		}
-		catch(PDOException $e) {
+		catch(Exception $e) {
 			// Handle exception
-			logMessage($e->getMessage());
+			logMessage(LogType::Error, $e->getMessage());
 		}
 });
 
@@ -248,13 +275,15 @@ $app->get('/purchases/:app_id/:user_id', function ($app_id, $user_id)
 	$db = $dbContainer['db'];
 	$purchased_product_ids = array();
 	
+	if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Checking purchases for APP ID: " . $app_id . " USER ID: " . $user_id);}
+				
 	try {
 		$subscribed = false;
 
 		// Retrieve latest receipt for Auto-Renewable-Subscriptions for the APP_ID, USER_ID combination
 		$result = $db->query("SELECT BASE64_RECEIPT FROM RECEIPTS
-									     WHERE APP_ID = '$app_id' AND USER_ID = '$user_id' AND type = 'auto-renewable-subscription'
-									     ORDER BY transaction_id DESC LIMIT 0, 1");
+									     WHERE APP_ID = '$app_id' AND USER_ID = '$user_id' AND TYPE = 'auto-renewable-subscription'
+									     ORDER BY TRANSACTION_ID DESC LIMIT 0, 1");
 		
 		$base64_latest_receipt = $result->fetchColumn();
 		if($base64_latest_receipt)
@@ -265,15 +294,28 @@ $app->get('/purchases/:app_id/:user_id', function ($app_id, $user_id)
 			$dateCurrent = new DateTime('now');
 			$interval = $dateCurrent->diff($dateLastValidated);
 	
-			logMessage($interval->format('%h hours %i minutes'));
-			logMessage($user_id);
-	
+			if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Time since last validating receipt for APP ID: " . $app_id . " USER ID: " . $user_id . " = "  . $interval->format('%h hours %i minutes') );}
+			
+			// If you want this Verification to happen ever time when in Development Mode, you can swap out the commented line below for the one below
+			// if (($interval->format('%h') > 12 || $interval->format('%a') > 1) || (isInDevelopmentMode($app_id)=="TRUE")) {			
+			
 			// Only refresh and re-verify receipt if greater than 12 hours (max one day) before last check
-			if ($interval->format('%h') > 12 || $interval->format('%a') > 1) {
+			if (($interval->format('%h') > 12) || ($interval->format('%a') > 1)){
 				// Check the latest receipt from the subscription table
 	
-				if ($base64_latest_receipt) {
-					$data = verifyReceipt($base64_latest_receipt, $app_id);
+				if ($base64_latest_receipt) {	
+				
+					// Verify Receipt - with logic to fall back to Sandbox test if Production Receipt fails (error code 21007
+					try{
+						$data = verifyReceipt($base64_latest_receipt, $app_id, $user_id);
+					}
+					catch(Exception $e) {
+						if($e->getCode() == "21007"){
+							logMessage(LogType::Info,"Confirming purchase for APP ID - Sandbox Receipt used in Production, retrying against Sandbox iTunes API: " . $app_id . " USER ID: " . $user_id . " TYPE: " . $type);
+							$data = verifyReceipt($base64_latest_receipt, $app_id, $user_id, TRUE);
+					    }
+					}		
+					
 	
 					markIssuesAsPurchased($data, $app_id, $user_id);
 	
@@ -295,19 +337,36 @@ $app->get('/purchases/:app_id/:user_id', function ($app_id, $user_id)
 				}
 			}
 		}
+		else
+		{
+			// There is no Auto-Renewable-Subscription for the APP_ID, USER_ID combination - check if there is a Free-Subscription
+			$result = $db->query("SELECT BASE64_RECEIPT FROM RECEIPTS
+									     WHERE APP_ID = '$app_id' AND USER_ID = '$user_id' AND TYPE = 'free-subscription'
+									     ORDER BY TRANSACTION_ID DESC LIMIT 0, 1");
+		
+			$base64_latest_receipt = $result->fetchColumn();
+			
+			// If there is a receipt for a free-subscription then we will return that the USER_ID is subscribed.  Since a free
+			// subscription really doesn't have and valid term then we will just ignore any dates in the Apple receipt.
+			// However the list of purchased product_ids can still be blank because the issues should be marked as free.
+			if($base64_latest_receipt){
+				$subscribed = true;
+			}			
+		}
 	
+		// Return list of purchased product_ids for the user
 		$result = $db->query("SELECT PRODUCT_ID FROM PURCHASES
 								WHERE APP_ID = '$app_id' AND USER_ID = '$user_id'");
 			
 		$purchased_product_ids = $result->fetchAll(PDO::FETCH_COLUMN);
-
+		
 		echo json_encode(array(
 			'issues' => $purchased_product_ids,
 			'subscribed' => $subscribed
 		));
 	}
-	catch(PDOException $e) {
-		logMessage($e->getMessage());
+	catch(Exception $e) {
+		logMessage(LogType::Error, $e->getMessage());
 		echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 	}
 });
@@ -341,8 +400,8 @@ $app->get('/itunes/:app_id', function ($app_id)
 		$AtomXML.= "</feed>";
 		echo utf8_encode($AtomXML);
 	}
-	catch(PDOException $e) {
-		logMessage($e->getMessage());
+	catch(Exception $e) {
+		logMessage(LogType::Error, $e->getMessage());
 		echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 	}
 });
@@ -359,8 +418,19 @@ $app->post('/confirmpurchase/:app_id/:user_id', function ($app_id, $user_id) use
 	$receiptdata = $app->request()->post('receipt_data');
 	$type = $app->request()->post('type');
 	
+	if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Confirming purchase for APP ID: " . $app_id . " USER ID: " . $user_id . " TYPE: " . $type);}
+	
 	try {
-		$iTunesReceiptInfo = verifyReceipt($receiptdata, $app_id);
+		// Verify Receipt - with logic to fall back to Sandbox test if Production Receipt fails (error code 21007
+		try{
+			$iTunesReceiptInfo = verifyReceipt($receiptdata, $app_id, $user_id);
+		}
+		catch(Exception $e) {
+			if($e->getCode() == "21007"){
+				logMessage(LogType::Info,"Confirming purchase for APP ID - Sandbox Receipt used in Production, retrying against Sandbox iTunes API: " . $app_id . " USER ID: " . $user_id . " TYPE: " . $type);
+				$iTunesReceiptInfo = verifyReceipt($receiptdata, $app_id, $user_id, TRUE);
+		    }
+		}	
 		
 		$sql = "INSERT IGNORE INTO RECEIPTS (APP_ID, QUANTITY, PRODUCT_ID, TYPE, TRANSACTION_ID, USER_ID, PURCHASE_DATE, 
 	 		    			ORIGINAL_TRANSACTION_ID, ORIGINAL_PURCHASE_DATE, APP_ITEM_ID, VERSION_EXTERNAL_IDENTIFIER, BID, BVRS, BASE64_RECEIPT) 
@@ -394,13 +464,13 @@ $app->post('/confirmpurchase/:app_id/:user_id', function ($app_id, $user_id) use
 			}				
 
 		}
-		catch(PDOException $e) {
-			logMessage($e->getMessage());
+		catch(Exception $e) {
+			logMessage(LogType::Error, $e->getMessage());
 			echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 		}
 	}
 	catch(Exception $e) {
-		logMessage($e->getMessage());
+		logMessage(LogType::Error, $e->getMessage());
 		echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 	}
 });
@@ -413,6 +483,8 @@ $app->post('/apns/:app_id/:user_id', function ($app_id, $user_id) use($app)
 	$db = $dbContainer['db'];
 	
 	$apns_token = $app->request()->post('apns_token');
+	
+	if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Storing APNS Token for APP ID: " . $app_id . " USER ID: " . $user_id);}
 
 	$sql = "INSERT IGNORE INTO APNS_TOKENS (APP_ID, USER_ID, APNS_TOKEN) 
  		    			VALUES (:app_id, :user_id, :apns_token)";
@@ -425,8 +497,8 @@ $app->post('/apns/:app_id/:user_id', function ($app_id, $user_id) use($app)
 		$stmt->execute();
 		echo '{"success":{"message":"' . $apns_token . '"}}';
 	}
-	catch(PDOException $e) {
-		logMessage($e->getMessage());
+	catch(Exception $e) {
+		logMessage(LogType::Error, $e->getMessage());
 		echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 	}
 });
@@ -436,12 +508,10 @@ $app->post('/apns/:app_id/:user_id', function ($app_id, $user_id) use($app)
 // ************************************************
 
 // Log Error Messages for tracking and debugging purposes, also displayed in the MagRocket Admin for issue debugging
-function logMessage($logMessage)
+function logMessage($logType, $logMessage)
 {
 	global $dbContainer;
 	$db = $dbContainer['db'];
-	
-	$logType = 1;
 	
 	$sql = "INSERT INTO SYSTEM_LOG (TYPE, MESSAGE) 
 		    			VALUES (:logtype, :logmessage)";
@@ -452,17 +522,34 @@ function logMessage($logMessage)
 		$stmt->bindParam("logmessage", $logMessage);
 		$stmt->execute();
 	}
-	catch(PDOException $e) {
-		// Error occurred, just ignore
-		logMessage($e->getMessage());
+	catch(Exception $e) {
+		// Error occurred, just ignore because if it failed in this logMessage method not much we can do
 	}
 }
 
-// Mark all available issues as purchased for a given user
+// Check if this publication is in development mode, useful for installation and non-production debugging
+function isInDevelopmentMode($app_id)
+{
+	global $developmentMode;
+	global $dbContainer;
+	$db = $dbContainer['db'];
+			
+	if($developmentMode != ""){
+		return $developmentMode;
+	}
+	else{
+		$result = $db->query("SELECT DEVELOPMENT_MODE FROM PUBLICATION WHERE APP_ID = '$app_id' LIMIT 0, 1");	
+		return $result->fetchColumn();
+	}
+}
+
+// Mark all available (paid) issues as purchased for a given user
 function markIssuesAsPurchased($app_store_data, $app_id, $user_id)
 {
 	global $dbContainer;
 	$db = $dbContainer['db'];
+	
+	if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Marking Issues as Purchased for APP ID: " . $app_id . " USER ID: " . $user_id);}
 		
 	$receipt = $app_store_data->receipt;
 	$startDate = new DateTime($receipt->purchase_date_pst);
@@ -478,33 +565,40 @@ function markIssuesAsPurchased($app_store_data, $app_id, $user_id)
 	// Now update the Purchases table with all Issues that fall within the subscription start and expiration date
 	$startDateFormatted = $startDate->format('Y-m-d H:i:s');
 	$endDateFormatted = $endDate->format('Y-m-d H:i:s');
+	
+	// Get First Day of the Month that the Receipt was generated for (Start)
+	$issuesStartDateFormatted = $startDate->format('Y-m-01 00:00:00');
+	// Get Last Day of the Month that the Receipt was generated for (Expiration)
+	$issuesEndDateFormatted = $endDate->format('Y-m-t 23:59:59');
 
 	// Update Subscriptions Table for user with current active subscription start and expiration date
 	updateSubscription($app_id, $user_id, $startDateFormatted, $endDateFormatted);
 
 	// Lookup development mode condition for Publication if in Development mark all issues as purchased, if production
 	// mark only those that exist within subscription period
-	$result = $db->query("SELECT DEVELOPMENT_MODE FROM PUBLICATION WHERE APP_ID = '$app_id' LIMIT 0, 1");	
-	$development_mode = $result->fetchColumn();
+	//$result = $db->query("SELECT DEVELOPMENT_MODE FROM PUBLICATION WHERE APP_ID = '$app_id' LIMIT 0, 1");	
+	//$development_mode = $result->fetchColumn();
 	
-	if($development_mode == "TRUE"){
-		logMessage("DEVELOPMENT MODE TRUE");
+	if(isInDevelopmentMode($app_id)=="TRUE"){
 		// For Testing, marking only with Subscription start date, not expiration date	
 		//$result = $db->query("SELECT PRODUCT_ID FROM ISSUES
-	   //   							WHERE APP_ID = '$app_id'
-	   //   							AND `DATE` > '$startDateFormatted'");
+	    //   							WHERE APP_ID = '$app_id'
+	    //		  						AND `DATE` >= '$issuesStartDateFormatted'
+	    //		  						AND PRICING = 'paid'");
 		
 		// For Testing Purposes in development mark all as available
 		$result = $db->query("SELECT PRODUCT_ID FROM ISSUES
-		  							 WHERE APP_ID = '$app_id'");
+		  							 WHERE APP_ID = '$app_id'
+		  							 AND PRICING = 'paid'");
 	}
 	else{
-		logMessage("DEVELOPMENT MODE FALSE");
 		// For Production
 		$result = $db->query("SELECT PRODUCT_ID FROM ISSUES
 									WHERE APP_ID = '$app_id'
-									AND `DATE` >= '$startDateFormatted'
-									AND `DATE` <= '$endDateFormatted'");
+									AND `DATE` >= '$issuesStartDateFormatted'
+									AND `DATE` <= '$issuesEndDateFormatted'
+									AND PRICING = 'paid'
+									AND AVAILABILITY = 'published'");
 	}
 
 	$product_ids_to_mark = $result->fetchAll(PDO::FETCH_COLUMN);
@@ -526,7 +620,7 @@ function markIssueAsPurchased($product_id, $app_id, $user_id)
 	global $dbContainer;
 	$db = $dbContainer['db'];
 	
-	logMessage($product_id);
+	if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Marking single issue as purchased for APP ID: " . $app_id . " USER ID: " . $user_id . " PRODUCT ID: " . $product_id);}
 	
 	$sql = "INSERT IGNORE INTO PURCHASES (APP_ID, USER_ID, PRODUCT_ID) 
 	    			VALUES (:app_id, :user_id, :product_id)";
@@ -537,8 +631,8 @@ function markIssueAsPurchased($product_id, $app_id, $user_id)
 		$stmt->bindParam("product_id", $product_id);
 		$stmt->execute();
 	}
-	catch(PDOException $e) {
-		logMessage($e->getMessage());
+	catch(Exception $e) {
+		logMessage(LogType::Error, $e->getMessage());
 		echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 	}
 }
@@ -551,6 +645,8 @@ function updateSubscription($app_id, $user_id, $effective_date, $expiration_date
 	
 	$currentDate = new DateTime('now');
 	$lastValidated = $currentDate->format('Y-m-d H:i:s');
+	
+	if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Updating subscription effective dates for APP ID: " . $app_id . " USER ID: " . $user_id);}
 	
 	$sql = "INSERT INTO SUBSCRIPTIONS (APP_ID, USER_ID, EFFECTIVE_DATE, EXPIRATION_DATE, LAST_VALIDATED) 
 	    			VALUES (:app_id, :user_id, :effective_date, :expiration_date, :last_validated)
@@ -565,8 +661,8 @@ function updateSubscription($app_id, $user_id, $effective_date, $expiration_date
 		$stmt->bindParam("last_validated", $lastValidated);
 		$stmt->execute();
 	}
-	catch(PDOException $e) {
-		logMessage($e->getMessage());
+	catch(Exception $e) {
+		logMessage(LogType::Error, $e->getMessage());
 		echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 	}
 }
@@ -576,6 +672,8 @@ function checkSubscription($app_id, $user_id)
 {
 	global $dbContainer;
 	$db = $dbContainer['db'];
+	
+	if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Checking subscription for APP ID: " . $app_id . " USER ID: " . $user_id);}
 	
 	$result = $db->prepare("SELECT EFFECTIVE_DATE, EXPIRATION_DATE, LAST_VALIDATED FROM SUBSCRIPTIONS
 										WHERE APP_ID = '$app_id' AND USER_ID = '$user_id' LIMIT 0,1");
@@ -587,23 +685,20 @@ function checkSubscription($app_id, $user_id)
 
 // Validate InApp Purchase Receipt, by calling the Apple iTunes verifyReceipt method
 // *Note that this seems to take between 2-4 seconds on average
-function verifyReceipt($receipt, $app_id)
+function verifyReceipt($receipt, $app_id, $user_id, $sandbox_override = FALSE)
 {
 	global $dbContainer;
 	$db = $dbContainer['db'];
 	
+	if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Verifying receipt with Apple for APP ID: " . $app_id . " USER ID: " . $user_id);}
+	
 	// Lookup shared secret from Publication table
 	$result = $db->query("SELECT ITUNES_SHARED_SECRET FROM PUBLICATION WHERE APP_ID = '$app_id' LIMIT 0, 1");	
 	$sharedSecret = $result->fetchColumn();
-
-	// Lookup development mode condition for Publication if in Development, if development mode is false use the Production endpoint
-	$result = $db->query("SELECT DEVELOPMENT_MODE FROM PUBLICATION WHERE APP_ID = '$app_id' LIMIT 0, 1");	
-	$development_mode = $result->fetchColumn();
 	
-	if ($development_mode == "TRUE") {
+	if (isInDevelopmentMode($app_id)=="TRUE" || $sandbox_override == TRUE) {
 		$endpoint = 'https://sandbox.itunes.apple.com/verifyReceipt';
-	}
-	else {
+	}else {
 		$endpoint = 'https://buy.itunes.apple.com/verifyReceipt';
 	}
 
@@ -640,8 +735,8 @@ function verifyReceipt($receipt, $app_id)
 
 	if (!isset($data->status) || ($data->status != 0 && $data->status != 21006)) {
 		$product_id = $data->receipt->product_id;
-		logMessage("Invalid receipt for $product_id : status " . $data->status);
-		throw new Exception('Invalid receipt');
+		logMessage(LogType::Warning, "Invalid receipt for APP ID: " . $app_id . " USER ID: " . $user_id . " STATUS: " . $data->status);
+		throw new Exception('Invalid Receipt', $data->status);
 	}
 
 	return $data;
@@ -655,6 +750,13 @@ function verifyReceipt($receipt, $app_id)
  */
 $app->run();
 
+// PHP doesn't support Enums so make a simple class for LogType
+abstract class LogType
+{
+	const Info = 'Info';
+	const Warning = 'Warning';
+	const Error = 'Error';	
+}
 
 // Timer class for debugging and logging use
 class timer
@@ -668,33 +770,28 @@ class timer
 			$this->start();
 		}
 	}
-
 	/*  start the timer  */
 	function start()
 	{
 		$this->start = $this->get_time();
 		$this->pause_time = 0;
 	}
-
 	/*  pause the timer  */
 	function pause()
 	{
 		$this->pause_time = $this->get_time();
 	}
-
 	/*  unpause the timer  */
 	function unpause()
 	{
 		$this->start+= ($this->get_time() - $this->pause_time);
 		$this->pause_time = 0;
 	}
-
 	/*  get the current timer value  */
 	function get($decimals = 8)
 	{
 		return round(($this->get_time() - $this->start) , $decimals);
 	}
-
 	/*  format the time in seconds  */
 	function get_time()
 	{
