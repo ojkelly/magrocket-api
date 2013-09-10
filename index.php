@@ -29,7 +29,7 @@ $developmentMode = '';
 $dbContainer['db.options'] = array(
 	'host' => 'localhost',							// CONFIGURE TO YOUR DB HOSTNAME					
 	'username' => 'mag1_sadev',					// CONFIGURE TO YOUR DB USERNAME		
-	'password' => 'magrocket',						// CONFIGURE TO YOUR DB USERNAME'S PASSWORD
+	'password' => 'selmer_76',						// CONFIGURE TO YOUR DB USERNAME'S PASSWORD
 	'dbname' => 'mag1_magrocketdev'				// CONFIGURE TO YOUR DB INSTANCE NAME
 );
 //*************************************************************
@@ -158,7 +158,7 @@ $app->get('/checkinstall/', function ()
 		
 		echo '{"MagRocket API":{"Success":"Database Connection Test Successful"}}';
 	}
-	catch(Exception $e) {
+	catch(PDOException $e) {
 		echo '{"MagRocket API":{"Error":"' . $e->getMessage() . '"}}';
 	}
 });
@@ -206,7 +206,7 @@ $app->get('/issues/:app_id/:user_id', function ($app_id, $user_id)
 		}
 		echo json_encode($IssuesArray);
 	}
-	catch(Exception $e) {
+	catch(PDOException $e) {
 		logMessage(LogType::Error, $e->getMessage());
 		echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 	}
@@ -261,7 +261,7 @@ $app->get('/issue/:app_id/:user_id/:name', function ($app_id, $user_id, $name) u
 				die();
 			}
 		}
-		catch(Exception $e) {
+		catch(PDOException $e) {
 			// Handle exception
 			logMessage(LogType::Error, $e->getMessage());
 		}
@@ -300,7 +300,7 @@ $app->get('/purchases/:app_id/:user_id', function ($app_id, $user_id)
 			// if (($interval->format('%h') > 12 || $interval->format('%a') > 1) || (isInDevelopmentMode($app_id)=="TRUE")) {			
 			
 			// Only refresh and re-verify receipt if greater than 12 hours (max one day) before last check
-			if (($interval->format('%h') > 12) || ($interval->format('%a') > 1)){
+			if (($interval->format('%h') > 12) || ($interval->format('%a') > 1) || (isInDevelopmentMode($app_id)=="TRUE")){
 				// Check the latest receipt from the subscription table
 	
 				if ($base64_latest_receipt) {	
@@ -365,7 +365,7 @@ $app->get('/purchases/:app_id/:user_id', function ($app_id, $user_id)
 			'subscribed' => $subscribed
 		));
 	}
-	catch(Exception $e) {
+	catch(PDOException $e) {
 		logMessage(LogType::Error, $e->getMessage());
 		echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 	}
@@ -400,7 +400,7 @@ $app->get('/itunes/:app_id', function ($app_id)
 		$AtomXML.= "</feed>";
 		echo utf8_encode($AtomXML);
 	}
-	catch(Exception $e) {
+	catch(PDOException $e) {
 		logMessage(LogType::Error, $e->getMessage());
 		echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 	}
@@ -420,15 +420,41 @@ $app->post('/confirmpurchase/:app_id/:user_id', function ($app_id, $user_id) use
 	
 	if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info,"Confirming purchase for APP ID: " . $app_id . " USER ID: " . $user_id . " TYPE: " . $type);}
 	
+	if(isInDevelopmentMode($app_id)=="TRUE"){logMessage(LogType::Info, "Data for APP ID: " . $app_id . " USER ID: " . $user_id . " Data: " . serialize($app->request()->post()));}
+	
 	try {
 		// Verify Receipt - with logic to fall back to Sandbox test if Production Receipt fails (error code 21007
 		try{
 			$iTunesReceiptInfo = verifyReceipt($receiptdata, $app_id, $user_id);
+				// Test for valid receipt object coming back from iTunes validation call, if not set we can't continue at this point
+				if (!isset($iTunesReceiptInfo->receipt)){
+				   logMessage(LogType::Error, "iTunes Receipt data is not set for: " . $app_id . " USER ID: " . $user_id . " TYPE: " . $type);
+				   
+				   header('HTTP/1.1 500 Internal Server Error');
+					die();
+				}
+				else{
+					logMessage(LogType::Info, "Data for iTunesReceiptInfo " . $app_id . " USER ID: " . $user_id . " Data: " . json_encode($iTunesReceiptInfo));		
+				}
 		}
 		catch(Exception $e) {
 			if($e->getCode() == "21007"){
 				logMessage(LogType::Info,"Confirming purchase for APP ID - Sandbox Receipt used in Production, retrying against Sandbox iTunes API: " . $app_id . " USER ID: " . $user_id . " TYPE: " . $type);
 				$iTunesReceiptInfo = verifyReceipt($receiptdata, $app_id, $user_id, TRUE);
+		    }
+		    else{
+			    // There was an exception in the processing of receipt validation.  If we cannot proceed, then we must abort as the purchase process broke.
+			    // Error Codes: 21000 - The App Store counld not read the JSON object you provided.
+			    //  			21002 - The data in the receipt-data property was malformed.
+			    //				21003 - The receipt could not be authenticated.
+			    //				21004 - The shared secret you provided does not match the shared secret on file for your account.
+			    //				21005 - The receipt server is not currently available.
+			    //				21006 - The receipt is valid but the subscription has expired.
+			    //				21007 - This receipt is a sandbox receipt, but it was sent to the production service for verification.
+			    //				21008 - This receipt is a production receipt, but it was sent to the sandbox service for verification.
+			    logMessage(LogType::Error, $e->getMessage());
+			    header('HTTP/1.1 500 Internal Server Error');
+				die();			    
 		    }
 		}	
 		
@@ -497,7 +523,7 @@ $app->post('/apns/:app_id/:user_id', function ($app_id, $user_id) use($app)
 		$stmt->execute();
 		echo '{"success":{"message":"' . $apns_token . '"}}';
 	}
-	catch(Exception $e) {
+	catch(PDOException $e) {
 		logMessage(LogType::Error, $e->getMessage());
 		echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 	}
@@ -522,7 +548,7 @@ function logMessage($logType, $logMessage)
 		$stmt->bindParam("logmessage", $logMessage);
 		$stmt->execute();
 	}
-	catch(Exception $e) {
+	catch(PDOException $e) {
 		// Error occurred, just ignore because if it failed in this logMessage method not much we can do
 	}
 }
@@ -631,7 +657,7 @@ function markIssueAsPurchased($product_id, $app_id, $user_id)
 		$stmt->bindParam("product_id", $product_id);
 		$stmt->execute();
 	}
-	catch(Exception $e) {
+	catch(PDOException $e) {
 		logMessage(LogType::Error, $e->getMessage());
 		echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 	}
@@ -661,7 +687,7 @@ function updateSubscription($app_id, $user_id, $effective_date, $expiration_date
 		$stmt->bindParam("last_validated", $lastValidated);
 		$stmt->execute();
 	}
-	catch(Exception $e) {
+	catch(PDOException $e) {
 		logMessage(LogType::Error, $e->getMessage());
 		echo '{"error":{"text":"' . $e->getMessage() . '"}}';
 	}
